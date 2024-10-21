@@ -5,7 +5,7 @@ from .exceptions import woocommerceError
 from .utils import make_woocommerce_log
 from .sync_customers import create_customer, create_customer_address, create_customer_contact
 from frappe.utils import flt, nowdate, cint
-from .woocommerce_requests import get_request, get_woocommerce_orders, get_woocommerce_tax, get_woocommerce_customer, put_request
+from .woocommerce_requests import get_woocommerce_orders, get_woocommerce_tax, get_woocommerce_customer, put_request
 from erpnext.selling.doctype.sales_order.sales_order import make_delivery_note, make_sales_invoice
 import requests.exceptions
 import base64, requests, datetime, os
@@ -20,7 +20,8 @@ def sync_woocommerce_orders():
     woocommerce_order_status_for_import = get_woocommerce_order_status_for_import()
     if not len(woocommerce_order_status_for_import) > 0:
         woocommerce_order_status_for_import = ['processing']
-        
+    
+    frappe.log_error(f"Complete WooCommerce order status: {woocommerce_order_status_for_import}")
     for woocommerce_order_status in woocommerce_order_status_for_import:
         for woocommerce_order in get_woocommerce_orders(woocommerce_order_status):
             so = frappe.db.get_value("Sales Order", {"woocommerce_order_id": woocommerce_order.get("id")}, "name")
@@ -30,14 +31,8 @@ def sync_woocommerce_orders():
                         create_order(woocommerce_order, woocommerce_settings)
                         frappe.local.form_dict.count_dict["orders"] += 1
 
-                    except woocommerceError as e:
-                        make_woocommerce_log(status="Error", method="sync_woocommerce_orders", message=frappe.get_traceback(),
-                            request_data=woocommerce_order, exception=True)
                     except Exception as e:
-                        if e.args and e.args[0] and e.args[0].decode("utf-8").startswith("402"):
-                            raise e
-                        else:
-                            make_woocommerce_log(title=e.message, status="Error", method="sync_woocommerce_orders", message=frappe.get_traceback(),
+                        make_woocommerce_log(title=frappe.get_traceback(), status="Error", method="sync_woocommerce_orders",
                                 request_data=woocommerce_order, exception=True)
             # close this order as synced
             close_synced_woocommerce_order(woocommerce_order.get("id"))
@@ -275,7 +270,7 @@ def get_customer_address_from_order(type, woocommerce_order, customer):
 
         except Exception as e:
             make_woocommerce_log(title=e, status="Error", method="create_customer_address", message=frappe.get_traceback(),
-                    request_data=woocommerce_customer, exception=True)
+                    request_data=customer, exception=True)
 
     return address_name
 
@@ -409,7 +404,7 @@ def update_taxes_with_shipping_lines(taxes, shipping_lines, woocommerce_settings
 
 
 def get_shipping_account_head(shipping):
-        shipping_title = shipping.get("method_title").encode("utf-8")
+        shipping_title = shipping.get("method_title")
 
         shipping_account =  frappe.db.get_value("woocommerce Tax Account", \
                 {"parent": "WooCommerce Config", "woocommerce_tax": shipping_title}, "tax_account")
@@ -453,4 +448,4 @@ def close_synced_woocommerce_order(wooid):
             
     except requests.exceptions.HTTPError as e:
         make_woocommerce_log(title=e.message, status="Error", method="close_synced_woocommerce_order", message=frappe.get_traceback(),
-            request_data=woocommerce_order, exception=True)
+            request_data=order_data, exception=True)
