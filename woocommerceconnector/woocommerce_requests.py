@@ -3,7 +3,7 @@ import frappe
 from frappe import _
 import json, math, time, pytz
 from .exceptions import woocommerceError
-from frappe.utils import get_request_session, get_datetime, get_time_zone
+from frappe.utils import get_request_session, get_datetime
 from woocommerce import API
 from .utils import make_woocommerce_log
 import requests
@@ -32,7 +32,7 @@ def get_woocommerce_settings():
     else:
         frappe.throw(_("woocommerce store URL is not configured on WooCommerce Config"), woocommerceError)
 
-def get_request_request(path, settings=None):
+def get_request_request(path, settings=None, params={}):
         if not settings:
                 settings = get_woocommerce_settings()
 
@@ -50,7 +50,7 @@ def get_request_request(path, settings=None):
                 version="wc/v3",
                 timeout=1000
         )
-        r = wcapi.get(path)
+        r = wcapi.get(path, params=params)
         
         #r.raise_for_status()
         # manually raise for status to get more info from error (message details)
@@ -120,7 +120,7 @@ def put_request(path, data):
         return r.json()
 
 def delete_request(path):
-        s = get_request_session()
+        settings = get_request_session()
 
         wcapi = API(
                 url=settings['woocommerce_url'],
@@ -171,12 +171,19 @@ def get_woocommerce_items(ignore_filter_conditions=False):
         filter_condition = get_filtering_condition()
         if cint(frappe.get_value("WooCommerce Config", "WooCommerce Config", "sync_only_published")) == 1:
             filter_condition += "&status=publish"
+    params = {
+        'per_page': _per_page
+    }
+    filter_conditions = filter_condition.split('&')
+    for filter_condition in filter_conditions:
+        params[filter_condition.split('=')[0]] = filter_condition.split('=')[1]
 
-    response = get_request_request('products?per_page={0}&{1}'.format(_per_page,filter_condition) )
+    response = get_request_request('products', params=params)
     woocommerce_products.extend(response.json())
 
     for page_idx in range(1, int( response.headers.get('X-WP-TotalPages')) or 1):
-        response = get_request_request('products?per_page={0}&page={1}&{2}'.format(_per_page,page_idx+1,filter_condition) )
+        params['page'] = page_idx+1
+        response = get_request_request('products', params=params)
         woocommerce_products.extend(response.json())
 
     return woocommerce_products
@@ -185,12 +192,19 @@ def get_woocommerce_item_variants(woocommerce_product_id):
     woocommerce_product_variants = []
 
     filter_condition = ''
+    params = {
+        'per_page': _per_page
+    }
+    filter_conditions = filter_condition.split('&')
+    for filter_condition in filter_conditions:
+        params[filter_condition.split('=')[0]] = filter_condition.split('=')[1]
 
-    response = get_request_request('products/{0}/variations?per_page={1}&{2}'.format(woocommerce_product_id,_per_page,filter_condition))
+    response = get_request_request('products/{0}/variations'.format(woocommerce_product_id), params=params)
     woocommerce_product_variants.extend(response.json()) 
     
     for page_idx in range(1, int( response.headers.get('X-WP-TotalPages')) or 1):
-        response = get_request_request('products/{0}/variations?per_page={1}&page={2}&{3}'.format(woocommerce_product_id, _per_page, page_idx+1, filter_condition))
+        params['page'] = page_idx+1
+        response = get_request_request('products/{0}/variations'.format(woocommerce_product_id), params=params)
         woocommerce_product_variants.extend(response.json())
     
     return woocommerce_product_variants
@@ -208,12 +222,18 @@ def get_woocommerce_customer(woocommerce_customer_id):
 
 def get_woocommerce_orders(order_status):
     woocommerce_orders = []
+    
+    params = {
+        'per_page': _per_page,
+        'status': order_status
+    }
 
-    response = get_request_request('orders?per_page={0}&status={1}'.format(_per_page,order_status))
+    response = get_request_request('orders', params=params)
     woocommerce_orders.extend(response.json())
         
     for page_idx in range(1, int( response.headers.get('X-WP-TotalPages')) or 1):
-        response = get_request_request('orders?per_page={0}&page={1}&status={2}'.format(_per_page,page_idx+1,order_status))
+        params['page'] = page_idx+1
+        response = get_request_request('orders')
         woocommerce_orders.extend(response.json())
 
     return woocommerce_orders
@@ -225,12 +245,19 @@ def get_woocommerce_customers(ignore_filter_conditions=False):
 
     if not ignore_filter_conditions:
         filter_condition = get_filtering_condition()
+        params = {
+            'per_page': _per_page
+        }
+        filter_conditions = filter_condition.split('&')
+        for filter_condition in filter_conditions:
+            params[filter_condition.split('=')[0]] = filter_condition.split('=')[1]
 
-        response = get_request_request('customers?per_page={0}&{1}'.format(_per_page,filter_condition))
+        response = get_request_request('customers', params=params)
         woocommerce_customers.extend(response.json())
 
         for page_idx in range(1, int( response.headers.get('X-WP-TotalPages')) or 1):
-            response = get_request_request('customers?per_page={0}&page={1}&{2}'.format(_per_page,page_idx+1,filter_condition))
+            params['page'] = page_idx+1
+            response = get_request_request('customers', params=params)
             woocommerce_customers.extend(response.json())
 
     return woocommerce_customers
